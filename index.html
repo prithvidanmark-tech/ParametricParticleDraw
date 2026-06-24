@@ -16,9 +16,9 @@
   --accent: #7c6af7;
   --accent2: #a78bfa;
   --accent-glow: rgba(124,106,247,0.25);
-  --text: #e2e2f0;
-  --text-dim: #6b6b8a;
-  --text-muted: #3a3a55;
+  --text: #ffffff;
+  --text-dim: #d0d0e8;
+  --text-muted: #9898b8;
   --track: #1e1e2e;
   --thumb: #7c6af7;
   --thumb-hover: #a78bfa;
@@ -47,6 +47,7 @@ canvas#c { display:block; width:100%; height:100%; cursor:crosshair; }
 #status-pill .dot.paused { background:var(--yellow); box-shadow:0 0 6px var(--yellow); }
 
 #canvas-actions { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:10px; }
+#credit { position:fixed; bottom:14px; right:20px; font-size:10px; color:rgba(255,255,255,0.28); letter-spacing:0.06em; pointer-events:none; white-space:nowrap; z-index:100; }
 .canvas-btn {
   background:rgba(17,17,24,0.85); border:1px solid var(--panel-border);
   backdrop-filter:blur(12px); border-radius:8px; color:var(--text-dim);
@@ -205,6 +206,46 @@ input[type="range"].filled { background:linear-gradient(to right,var(--accent) 0
 .add-map-select-wrap { margin-top:5px; }
 .add-map-select { width:100%; background:var(--surface2); border:1px solid var(--accent); color:var(--text); font-family:inherit; font-size:10px; padding:5px 7px; border-radius:5px; outline:none; cursor:pointer; -webkit-appearance:none; appearance:none; }
 .add-map-select option { background:#1c1c28; color:var(--text); }
+
+/* ── Readability: larger fonts ── */
+#status-pill         { font-size:13px; }
+.canvas-btn          { font-size:13px; }
+#panel-header h1     { font-size:15px; }
+#panel-header p      { font-size:12px; }
+.tab                 { font-size:12px; }
+.section-label       { font-size:11px; }
+.slider-label        { font-size:13px; }
+.slider-value        { font-size:12px; }
+.mod-live            { font-size:11px; }
+.btn-opt             { font-size:12px; }
+.action-btn          { font-size:12px; }
+.preset-chip         { font-size:12px; }
+.noise-card .nc-name { font-size:12px; }
+.noise-card .nc-desc { font-size:11px; }
+.pos-map-label       { font-size:11px; }
+.info-block p        { font-size:12px; }
+.shortcut-row        { font-size:12px; }
+.shortcut-row .key   { font-size:11px; }
+.add-osc-btn         { font-size:12px; }
+.osc-empty p         { font-size:12px; }
+.osc-name            { font-size:13px; }
+.osc-delete          { font-size:16px; }
+.osc-shape-btn       { font-size:11px; }
+.osc-param-label     { font-size:11px; }
+.osc-param-val       { font-size:11px; }
+.osc-mappings-label  { font-size:11px; }
+.add-map-btn         { font-size:11px; }
+.mapping-param-name  { font-size:12px; }
+.range-col-label     { font-size:11px; }
+.add-map-select      { font-size:12px; }
+.man-title           { font-size:22px; }
+.man-sub             { font-size:13px; }
+.man-h               { font-size:11px; }
+.man-p               { font-size:13px; }
+.man-row             { font-size:12px; }
+.man-kc              { font-size:12px; }
+.man-key             { font-size:11px; }
+.man-badge           { font-size:11px; }
 </style>
 </head>
 <body>
@@ -293,7 +334,7 @@ input[type="range"].filled { background:linear-gradient(to right,var(--accent) 0
     <div id="canvas-actions">
       <button class="canvas-btn" id="btn-pause">Pause</button>
       <button class="canvas-btn" id="btn-clear">Clear</button>
-      <button class="canvas-btn active" id="btn-spawn">Show Spawn</button>
+      <button class="canvas-btn" id="btn-spawn">Show Spawn</button>
       <button class="canvas-btn" id="btn-export">Export PNG</button>
       <button class="canvas-btn" id="btn-record">Record</button>
       <button class="canvas-btn" id="btn-manual">Manual</button>
@@ -564,7 +605,7 @@ input[type="range"].filled { background:linear-gradient(to right,var(--accent) 0
 // ── Canvas ────────────────────────────────────────────────────
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-let showSpawn = true;
+let showSpawn = false;
 
 function resize() {
   const w = document.getElementById('canvas-wrap');
@@ -1267,5 +1308,6 @@ function buildMappingRow(card,osc,m){
   return row;
 }
 </script>
+<div id="credit">Prithvi Ravi Kantan — 2026</div>
 </body>
 </html>
