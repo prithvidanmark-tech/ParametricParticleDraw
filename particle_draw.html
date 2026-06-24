@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Particle Draw</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0a0f;
+  --panel: #111118;
+  --panel-border: #1e1e2e;
+  --surface: #16161f;
+  --surface2: #1c1c28;
+  --accent: #7c6af7;
+  --accent2: #a78bfa;
+  --accent-glow: rgba(124,106,247,0.25);
+  --text: #e2e2f0;
+  --text-dim: #6b6b8a;
+  --text-muted: #3a3a55;
+  --track: #1e1e2e;
+  --thumb: #7c6af7;
+  --thumb-hover: #a78bfa;
+  --green: #4ade80;
+  --yellow: #facc15;
+  --red: #f87171;
+  --cyan: #22d3ee;
+  --panel-w: 320px;
+}
+
+html, body { width:100%; height:100%; background:var(--bg); color:var(--text); font-family:'SF Mono','Fira Code','Cascadia Code',monospace; overflow:hidden; }
+#app { display:flex; width:100%; height:100%; }
+
+#canvas-wrap { flex:1; position:relative; overflow:hidden; }
+canvas#c { display:block; width:100%; height:100%; cursor:crosshair; }
+
+#status-pill {
+  position:absolute; top:18px; left:50%; transform:translateX(-50%);
+  background:rgba(17,17,24,0.85); border:1px solid var(--panel-border);
+  backdrop-filter:blur(12px); border-radius:100px; padding:6px 18px;
+  font-size:11px; color:var(--text-dim); letter-spacing:0.08em;
+  pointer-events:none; display:flex; gap:18px; align-items:center; white-space:nowrap;
+}
+#status-pill span { display:flex; align-items:center; gap:6px; }
+#status-pill .dot { width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 6px var(--green); }
+#status-pill .dot.paused { background:var(--yellow); box-shadow:0 0 6px var(--yellow); }
+
+#canvas-actions { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:10px; }
+.canvas-btn {
+  background:rgba(17,17,24,0.85); border:1px solid var(--panel-border);
+  backdrop-filter:blur(12px); border-radius:8px; color:var(--text-dim);
+  font-family:inherit; font-size:12px; padding:7px 16px; cursor:pointer;
+  letter-spacing:0.05em; transition:color .15s,border-color .15s,background .15s;
+}
+.canvas-btn:hover { color:var(--text); border-color:var(--accent); background:rgba(124,106,247,0.08); }
+.canvas-btn.active { color:var(--accent2); border-color:var(--accent); background:rgba(124,106,247,0.12); }
+.canvas-btn.recording { color:var(--red); border-color:var(--red); background:rgba(248,113,113,0.12); }
+
+/* Manual overlay */
+#canvas-actions { z-index:10; }
+#manual-overlay {
+  display:none; position:absolute; inset:0; background:var(--bg);
+  overflow-y:auto; padding:44px 52px; z-index:5;
+  scrollbar-width:thin; scrollbar-color:var(--surface2) transparent;
+}
+#manual-overlay::-webkit-scrollbar { width:5px; }
+#manual-overlay::-webkit-scrollbar-thumb { background:var(--surface2); border-radius:3px; }
+#manual-overlay.visible { display:block; }
+.man { max-width:700px; margin:0 auto; }
+.man-title { font-size:20px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:var(--text); margin-bottom:2px; }
+.man-sub { font-size:11px; color:var(--text-dim); letter-spacing:0.07em; margin-bottom:36px; }
+.man-section { margin-bottom:28px; }
+.man-h { font-size:9px; letter-spacing:0.16em; text-transform:uppercase; color:var(--accent2); border-bottom:1px solid var(--panel-border); padding-bottom:7px; margin-bottom:14px; }
+.man-p { font-size:11px; color:var(--text-dim); line-height:1.85; margin-bottom:10px; letter-spacing:0.02em; }
+.man-row { display:flex; gap:16px; padding:6px 0; border-bottom:1px solid rgba(30,30,46,0.6); font-size:10px; }
+.man-row:last-child { border-bottom:none; }
+.man-kc { flex:0 0 150px; color:var(--accent2); line-height:1.6; }
+.man-dc { color:var(--text-dim); line-height:1.7; flex:1; }
+.man-key { display:inline-block; background:var(--surface2); border:1px solid var(--panel-border); border-radius:4px; padding:1px 8px; font-size:9px; color:var(--text-dim); }
+.man-badge { display:inline-block; background:rgba(124,106,247,0.1); border:1px solid rgba(124,106,247,0.2); border-radius:3px; padding:1px 6px; font-size:9px; color:var(--accent2); margin-left:6px; }
+
+#panel { width:var(--panel-w); height:100%; background:var(--panel); border-left:1px solid var(--panel-border); display:flex; flex-direction:column; overflow:hidden; }
+#panel-header { padding:20px 20px 14px; border-bottom:1px solid var(--panel-border); flex-shrink:0; }
+#panel-header h1 { font-size:13px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:var(--text); margin-bottom:2px; }
+#panel-header p { font-size:10px; color:var(--text-dim); letter-spacing:0.06em; }
+
+#tabs { display:flex; padding:10px 12px 0; gap:4px; flex-shrink:0; border-bottom:1px solid var(--panel-border); }
+.tab { flex:1; background:none; border:none; border-bottom:2px solid transparent; color:var(--text-dim); font-family:inherit; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; padding:6px 3px 10px; cursor:pointer; transition:color .15s,border-color .15s; }
+.tab:hover { color:var(--text); }
+.tab.active { color:var(--accent2); border-bottom-color:var(--accent); }
+
+#panel-body { flex:1; overflow-y:auto; padding:14px 0 20px; scrollbar-width:thin; scrollbar-color:var(--surface2) transparent; }
+#panel-body::-webkit-scrollbar { width:4px; }
+#panel-body::-webkit-scrollbar-track { background:transparent; }
+#panel-body::-webkit-scrollbar-thumb { background:var(--surface2); border-radius:2px; }
+.tab-page { display:none; }
+.tab-page.active { display:block; }
+
+.section { padding:0 16px; margin-bottom:6px; }
+.section-label { font-size:9px; letter-spacing:0.14em; text-transform:uppercase; color:var(--text-muted); margin-bottom:10px; padding-top:12px; }
+
+.slider-row { margin-bottom:14px; }
+.slider-header { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:5px; gap:4px; }
+.slider-label { font-size:11px; color:var(--text-dim); letter-spacing:0.04em; }
+.slider-value { font-size:10px; color:var(--accent2); min-width:44px; text-align:right; font-variant-numeric:tabular-nums; }
+.mod-live { font-size:9px; color:var(--cyan); min-width:36px; text-align:right; font-variant-numeric:tabular-nums; flex-shrink:0; }
+.mod-live:empty { display:none; }
+
+input[type="range"] { -webkit-appearance:none; appearance:none; width:100%; height:3px; background:var(--track); border-radius:2px; outline:none; cursor:pointer; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:13px; height:13px; border-radius:50%; background:var(--thumb); border:2px solid var(--bg); box-shadow:0 0 8px var(--accent-glow); cursor:grab; transition:background .15s,transform .1s; }
+input[type="range"]::-webkit-slider-thumb:hover { background:var(--thumb-hover); }
+input[type="range"]::-webkit-slider-thumb:active { cursor:grabbing; transform:scale(1.2); }
+input[type="range"]::-moz-range-thumb { width:13px; height:13px; border-radius:50%; background:var(--thumb); border:2px solid var(--bg); box-shadow:0 0 8px var(--accent-glow); cursor:grab; }
+input[type="range"].filled { background:linear-gradient(to right,var(--accent) 0%,var(--accent) var(--pct),var(--track) var(--pct),var(--track) 100%); }
+
+.slider-row.is-modulated .slider-value { color:var(--cyan); }
+.slider-row.is-modulated input[type="range"].filled { background:linear-gradient(to right,var(--cyan) 0%,var(--cyan) var(--pct),var(--track) var(--pct),var(--track) 100%); }
+.slider-row.is-modulated input[type="range"]::-webkit-slider-thumb { background:var(--cyan); box-shadow:0 0 8px rgba(34,211,238,0.4); }
+
+.btn-group-row { margin-bottom:14px; }
+.btn-group-row .slider-label { display:block; margin-bottom:5px; }
+.btn-group { display:flex; gap:4px; flex-wrap:wrap; }
+.btn-opt { flex:1; min-width:0; background:var(--surface); border:1px solid var(--panel-border); color:var(--text-dim); font-family:inherit; font-size:10px; padding:5px 6px; border-radius:5px; cursor:pointer; transition:all .12s; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.btn-opt:hover { color:var(--text); border-color:var(--accent); }
+.btn-opt.active { background:rgba(124,106,247,0.18); border-color:var(--accent); color:var(--accent2); }
+
+.divider { height:1px; background:var(--panel-border); margin:8px 16px 0; }
+
+#color-strip { height:4px; width:calc(100% - 32px); margin:0 16px 14px; border-radius:2px; background:hsl(0,100%,50%); transition:background .1s; }
+
+#action-row { display:flex; gap:8px; padding:0 16px; margin-top:4px; }
+.action-btn { flex:1; background:var(--surface); border:1px solid var(--panel-border); color:var(--text-dim); font-family:inherit; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; padding:8px 6px; border-radius:6px; cursor:pointer; transition:all .15s; }
+.action-btn:hover { color:var(--text); border-color:var(--accent); background:rgba(124,106,247,0.08); }
+.action-btn.danger:hover { border-color:var(--red); color:var(--red); background:rgba(248,113,113,0.06); }
+
+#presets { display:flex; flex-wrap:wrap; gap:6px; padding:0 16px; }
+.preset-chip { background:var(--surface); border:1px solid var(--panel-border); color:var(--text-dim); font-family:inherit; font-size:10px; padding:5px 11px; border-radius:100px; cursor:pointer; transition:all .12s; }
+.preset-chip:hover { border-color:var(--accent); color:var(--accent2); background:rgba(124,106,247,0.08); }
+
+/* Noise type cards */
+.noise-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px; padding:0 16px; margin-bottom:14px; }
+.noise-card { background:var(--surface); border:1px solid var(--panel-border); border-radius:6px; padding:7px 8px; cursor:pointer; transition:all .12s; }
+.noise-card:hover { border-color:var(--accent); }
+.noise-card.active { background:rgba(124,106,247,0.12); border-color:var(--accent); }
+.noise-card .nc-name { font-size:10px; color:var(--text-dim); font-weight:500; margin-bottom:2px; }
+.noise-card.active .nc-name { color:var(--accent2); }
+.noise-card .nc-desc { font-size:9px; color:var(--text-muted); line-height:1.5; }
+.noise-card.active .nc-desc { color:var(--text-dim); }
+
+/* Direction display */
+.dir-row { display:flex; align-items:center; gap:8px; margin-bottom:14px; }
+.dir-canvas-wrap { flex-shrink:0; }
+#dir-canvas { border-radius:50%; border:1px solid var(--panel-border); background:var(--surface); display:block; }
+
+/* Position crosshair mini-map */
+.pos-map-wrap { padding:0 16px; margin-bottom:14px; }
+.pos-map-label { font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:6px; }
+#pos-canvas { display:block; width:100%; height:80px; border-radius:6px; border:1px solid var(--panel-border); background:var(--surface); cursor:crosshair; }
+
+/* Info */
+.info-block { padding:0 16px; margin-bottom:12px; }
+.info-block p { font-size:10px; color:var(--text-dim); line-height:1.7; letter-spacing:0.02em; }
+.shortcut-row { display:flex; justify-content:space-between; padding:5px 16px; font-size:10px; }
+.shortcut-row .key { background:var(--surface2); border:1px solid var(--panel-border); border-radius:4px; padding:2px 7px; color:var(--text-dim); font-family:inherit; }
+.shortcut-row .desc { color:var(--text-dim); }
+
+/* ── Modulation tab ── */
+.mod-toolbar { display:flex; align-items:center; justify-content:space-between; padding:12px 16px 6px; }
+.mod-toolbar .section-label { padding-top:0; margin-bottom:0; }
+.add-osc-btn { background:rgba(124,106,247,0.12); border:1px solid var(--accent); color:var(--accent2); font-family:inherit; font-size:10px; letter-spacing:0.06em; padding:5px 12px; border-radius:5px; cursor:pointer; transition:all .15s; }
+.add-osc-btn:hover { background:rgba(124,106,247,0.22); }
+.osc-empty { padding:28px 16px; text-align:center; }
+.osc-empty p { font-size:10px; color:var(--text-muted); line-height:1.9; letter-spacing:0.04em; }
+.osc-empty .osc-empty-icon { font-size:22px; margin-bottom:8px; opacity:0.3; }
+.osc-card { margin:0 12px 10px; background:var(--surface); border:1px solid var(--panel-border); border-radius:8px; overflow:hidden; transition:border-color .2s; }
+.osc-card:hover { border-color:rgba(124,106,247,0.35); }
+.osc-header { display:flex; align-items:center; padding:8px 10px 7px; gap:7px; }
+.osc-live-dot { width:6px; height:6px; border-radius:50%; background:var(--cyan); box-shadow:0 0 5px var(--cyan); flex-shrink:0; }
+.osc-name { flex:1; font-size:11px; color:var(--text); font-weight:500; }
+.osc-delete { background:none; border:none; color:var(--text-muted); font-size:15px; line-height:1; cursor:pointer; padding:0 2px; transition:color .12s; }
+.osc-delete:hover { color:var(--red); }
+.osc-wave-canvas { display:block; width:100%; height:32px; border-top:1px solid var(--panel-border); border-bottom:1px solid var(--panel-border); background:#0d0d14; }
+.osc-body { padding:8px 10px 10px; }
+.osc-shapes { display:flex; gap:3px; margin-bottom:9px; }
+.osc-shape-btn { flex:1; background:var(--surface2); border:1px solid var(--panel-border); color:var(--text-dim); font-family:inherit; font-size:9px; padding:4px 2px; border-radius:4px; cursor:pointer; text-align:center; transition:all .12s; }
+.osc-shape-btn:hover { color:var(--text); border-color:var(--accent); }
+.osc-shape-btn.active { background:rgba(124,106,247,0.18); border-color:var(--accent); color:var(--accent2); }
+.osc-param-row { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+.osc-param-label { font-size:9px; color:var(--text-dim); width:36px; flex-shrink:0; }
+.osc-param-slider { flex:1; min-width:0; }
+.osc-param-val { font-size:9px; color:var(--accent2); width:44px; text-align:right; flex-shrink:0; font-variant-numeric:tabular-nums; }
+.osc-mappings-header { display:flex; align-items:center; gap:6px; padding-top:7px; margin-top:4px; border-top:1px solid var(--panel-border); margin-bottom:5px; }
+.osc-mappings-label { flex:1; font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); }
+.add-map-btn { background:none; border:1px solid var(--text-muted); color:var(--text-muted); font-family:inherit; font-size:9px; padding:2px 8px; border-radius:4px; cursor:pointer; transition:all .12s; }
+.add-map-btn:hover { border-color:var(--accent); color:var(--accent2); }
+.mapping-row { background:var(--surface2); border:1px solid var(--panel-border); border-radius:5px; margin-bottom:4px; padding:6px 8px 7px; }
+.mapping-top { display:flex; align-items:center; margin-bottom:6px; }
+.mapping-param-name { flex:1; font-size:10px; color:var(--text); }
+.map-del-btn { background:none; border:none; color:var(--text-muted); font-size:13px; line-height:1; cursor:pointer; padding:0; transition:color .12s; }
+.map-del-btn:hover { color:var(--red); }
+.range-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.range-col-label { font-size:9px; color:var(--text-dim); margin-bottom:2px; display:flex; justify-content:space-between; }
+.range-col-label .rv { color:var(--accent2); font-variant-numeric:tabular-nums; }
+.add-map-select-wrap { margin-top:5px; }
+.add-map-select { width:100%; background:var(--surface2); border:1px solid var(--accent); color:var(--text); font-family:inherit; font-size:10px; padding:5px 7px; border-radius:5px; outline:none; cursor:pointer; -webkit-appearance:none; appearance:none; }
+.add-map-select option { background:#1c1c28; color:var(--text); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="canvas-wrap">
+    <canvas id="c"></canvas>
+
+    <div id="manual-overlay">
+      <div class="man">
+        <div class="man-title">Particle Draw</div>
+        <div class="man-sub">User Manual — Parameter Studio</div>
+
+        <div class="man-section">
+          <div class="man-h">Overview</div>
+          <p class="man-p">Particle Draw spawns small squares at a moving origin each frame. Each particle drifts under a noise-driven acceleration field, fades out according to its decay rate, and can leave a persistent trail. Particles also recursively spawn smaller children before dying, producing fractal-like cloud formations from a single source.</p>
+          <p class="man-p">The canvas renders continuously. All parameter changes affect newly spawned particles immediately. Use <b style="color:var(--accent2)">Presets</b> on the Spawn tab for quick starting points. Export a still with <b style="color:var(--accent2)">Export PNG</b> or capture a WebM video with <b style="color:var(--accent2)">Record</b>.</p>
+        </div>
+
+        <div class="man-section">
+          <div class="man-h">Keyboard Shortcuts</div>
+          <div class="man-row"><span class="man-kc"><span class="man-key">Space</span></span><span class="man-dc">Pause / Resume particle spawning</span></div>
+          <div class="man-row"><span class="man-kc"><span class="man-key">C</span></span><span class="man-dc">Clear canvas and remove all particles</span></div>
+          <div class="man-row"><span class="man-kc"><span class="man-key">R</span></span><span class="man-dc">Randomize hue to a new random value</span></div>
+          <div class="man-row"><span class="man-kc"><span class="man-key">↑</span> <span class="man-key">↓</span></span><span class="man-dc">Increase / decrease Noise Strength by 0.1</span></div>
+          <div class="man-row"><span class="man-kc"><span class="man-key">←</span> <span class="man-key">→</span></span><span class="man-dc">Decrease / increase Decay Rate by 1</span></div>
+          <div class="man-row"><span class="man-kc"><span class="man-key">1</span> – <span class="man-key">6</span></span><span class="man-dc">Switch noise type: 1 Perlin · 2 Random · 3 Gaussian · 4 fBm · 5 Brownian · 6 Logistic</span></div>
+        </div>
+
+        <div class="man-section">
+          <div class="man-h">Spawn &amp; Position <span class="man-badge">Spawn tab</span></div>
+          <div class="man-row"><span class="man-kc">Spawn Point mini-map</span><span class="man-dc">Click anywhere on the mini-map at the top of the Spawn tab to set the draw origin directly. The yellow crosshair shows the primary head; the cyan crosshair (Mirror mode) shows the reflected second head.</span></div>
+          <div class="man-row"><span class="man-kc">Draw X / Draw Y</span><span class="man-dc">Normalized (0–1) spawn coordinates — X=0 is the left edge, Y=0 is the bottom edge. Changing either resets the motion accumulator so the origin snaps to the new position.</span></div>
+          <div class="man-row"><span class="man-kc">Draw Heads</span><span class="man-dc"><b style="color:var(--text)">1 — Single:</b> one spawn origin. <b style="color:var(--text)">2 — Mirror:</b> a second origin reflected across the canvas center, producing bilateral symmetry.</span></div>
+          <div class="man-row"><span class="man-kc">Speed</span><span class="man-dc">How fast the spawn origin moves each frame in the chosen Direction. At 0 the origin is stationary; at 1 it crosses the canvas quickly, leaving a moving streak.</span></div>
+          <div class="man-row"><span class="man-kc">Direction</span><span class="man-dc">Travel angle of the spawn origin (0–1 = 0°–360°). The compass in the panel shows the current heading. Modulate with an LFO for sweeping arcs or circular paths.</span></div>
+        </div>
+
+        <div class="man-section">
+          <div class="man-h">Decay &amp; Trails <span class="man-badge">Spawn tab</span></div>
+          <div class="man-row"><span class="man-kc">Decay Rate</span><span class="man-dc">Alpha lost per frame. Higher values = short-lived sparks; lower values = long, persistent clouds. Range 2–20. This is the primary control over particle lifetime.</span></div>
+          <div class="man-row"><span class="man-kc">Trail Fade</span><span class="man-dc">A semi-transparent black rectangle is drawn over the canvas each frame. At 0 nothing fades. At higher values only very recent particles stay visible, creating comet-like motion blur. Best combined with a fast-moving spawn point.</span></div>
+        </div>
+
+        <div class="man-section">
+          <div class="man-h">Noise Types <span class="man-badge">Noise tab</span></div>
+          <div class="man-row"><span class="man-kc">Perlin</span><span class="man-dc">Position-based gradient noise. Particles follow coherent, smoothly curving paths. The best default for organic, flowing results.</span></div>
+          <div class="man-row"><span class="man-kc">Random</span><span class="man-dc">Pure uniform randomness each frame. Produces explosive, jittery scatter with no spatial coherence. Good for sparks or static.</span></div>
+          <div class="man-row"><span class="man-kc">Gaussian</span><span class="man-dc">Normal (bell-curve) distribution. Symmetric soft diffusion — most particles stay close to their spawn point, forming round clouds.</span></div>
+          <div class="man-row"><span class="man-kc">fBm</span><span class="man-dc">Fractal Brownian Motion — layered octaves of value noise. Produces multi-scale turbulence with both large sweeping motions and fine-grain detail.</span></div>
+          <div class="man-row"><span class="man-kc">Brownian</span><span class="man-dc">Persistent random walk. Each particle accumulates a velocity direction and drifts continuously in it, giving a flowing river-like quality that gradually spreads.</span></div>
+          <div class="man-row"><span class="man-kc">Logistic</span><span class="man-dc">Deterministic chaos via the logistic map (r = 3.9). Fully reproducible yet apparently random — creates dense, unpredictable tangles that never repeat.</span></div>
+          <div class="man-row"><span class="man-kc">Noise Strength</span><span class="man-dc">Scales the acceleration vector the noise applies each frame. Higher values produce more turbulent, spread-out clouds; near 0 particles drift very gently.</span></div>
+        </div>
+
+        <div class="man-section">
+          <div class="man-h">Recursion</div>
+          <p class="man-p">When a particle's alpha drops below 25% of its initial value — and that initial value exceeds the recursion threshold (20 for single head, 30 for mirror mode) — it spawns two smaller children at its current position. The children inherit half the parent's decay rate, so they live roughly twice as long and can recurse again. This cascades until particles are too faint to recurse further, producing fractal dust clouds from a single source particle.</p>
+        </div>
+
+        <div class="man-section">
+          <div class="man-h">Color &amp; Shape <span class="man-badge">Color tab</span></div>
+          <div class="man-row"><span class="man-kc">Hue</span><span class="man-dc">Base hue (0–1 maps to 0°–360°) used for all newly spawned particles. Press <span class="man-key">R</span> to jump to a random hue instantly.</span></div>
+          <div class="man-row"><span class="man-kc">Saturation</span><span class="man-dc">Color saturation (0 = greyscale, 1 = fully saturated). The color strip at the top of the Color tab previews the current hue + saturation combination.</span></div>
+          <div class="man-row"><span class="man-kc">Alpha Multiplier</span><span class="man-dc">Scales the computed alpha of each particle when drawn. Lower values produce a more transparent, layered watercolour wash.</span></div>
+          <div class="man-row"><span class="man-kc">Particle Size</span><span class="man-dc">Width and height of each square particle in pixels (1–20). Children spawned via recursion inherit the current particle size.</span></div>
+        </div>
+
+        <div class="man-section">
+          <div class="man-h">LFO Modulation <span class="man-badge">Mod tab</span></div>
+          <p class="man-p">Oscillators (LFOs) automatically sweep any parameter between a Lo and Hi value on a repeating cycle. Add one with <b style="color:var(--accent2)">+ LFO</b>, then click <b style="color:var(--accent2)">+ map</b> inside the card to assign it to a parameter. Active modulation turns sliders <b style="color:var(--cyan)">cyan</b> and shows the live driven value.</p>
+          <div class="man-row"><span class="man-kc">Shape</span><span class="man-dc">Waveform — <b style="color:var(--text)">SIN</b> (smooth), <b style="color:var(--text)">TRI</b> (linear ramp), <b style="color:var(--text)">SQR</b> (hard on/off), <b style="color:var(--text)">SAW</b> (rising), <b style="color:var(--text)">RSW</b> (falling).</span></div>
+          <div class="man-row"><span class="man-kc">Rate</span><span class="man-dc">Cycles per second (0.01–10 Hz). At 0.01 Hz one full sweep takes 100 s; at 10 Hz it pulses near-audibly. Good starting range: 0.1–1 Hz.</span></div>
+          <div class="man-row"><span class="man-kc">Amp</span><span class="man-dc">Scales the bipolar contribution before mapping. At 0 the LFO has no effect regardless of its Lo/Hi range.</span></div>
+          <div class="man-row"><span class="man-kc">Phase</span><span class="man-dc">Cycle starting offset (0–1). Shift multiple LFOs out of phase for complex compound motion patterns.</span></div>
+          <div class="man-row"><span class="man-kc">Lo / Hi range</span><span class="man-dc">Each mapping defines independent sweep bounds for its parameter. Multiple LFOs targeting the same parameter are averaged together.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="status-pill">
+      <span><span class="dot" id="run-dot"></span><span id="run-label">RUNNING</span></span>
+      <span id="particle-count">0 particles</span>
+      <span id="fps-label">-- fps</span>
+    </div>
+    <div id="canvas-actions">
+      <button class="canvas-btn" id="btn-pause">Pause</button>
+      <button class="canvas-btn" id="btn-clear">Clear</button>
+      <button class="canvas-btn active" id="btn-spawn">Show Spawn</button>
+      <button class="canvas-btn" id="btn-export">Export PNG</button>
+      <button class="canvas-btn" id="btn-record">Record</button>
+      <button class="canvas-btn" id="btn-manual">Manual</button>
+    </div>
+  </div>
+
+  <div id="panel">
+    <div id="panel-header">
+      <h1>Particle Draw</h1>
+      <p>Parameter Studio</p>
+    </div>
+
+    <div id="tabs">
+      <button class="tab active" data-tab="spawn">Spawn</button>
+      <button class="tab" data-tab="noise">Noise</button>
+      <button class="tab" data-tab="color">Color</button>
+      <button class="tab" data-tab="mod">Mod</button>
+      <button class="tab" data-tab="info">Info</button>
+    </div>
+
+    <div id="panel-body">
+
+      <!-- SPAWN -->
+      <div class="tab-page active" id="tab-spawn">
+        <div class="section">
+          <div class="section-label">Position</div>
+
+          <div class="pos-map-wrap">
+            <div class="pos-map-label">Spawn Point — click to set</div>
+            <canvas id="pos-canvas" width="288" height="80"></canvas>
+          </div>
+
+          <div class="slider-row" id="sr-drawX">
+            <div class="slider-header">
+              <span class="slider-label">Draw X</span>
+              <span class="mod-live" id="mod-live-drawX"></span>
+              <span class="slider-value" id="v-drawX">0.00</span>
+            </div>
+            <input type="range" class="filled" id="s-drawX" min="0" max="1" step="0.001" value="0">
+          </div>
+          <div class="slider-row" id="sr-drawY">
+            <div class="slider-header">
+              <span class="slider-label">Draw Y</span>
+              <span class="mod-live" id="mod-live-drawY"></span>
+              <span class="slider-value" id="v-drawY">0.00</span>
+            </div>
+            <input type="range" class="filled" id="s-drawY" min="0" max="1" step="0.001" value="0">
+          </div>
+
+          <div class="btn-group-row">
+            <span class="slider-label">Draw Heads</span>
+            <div class="btn-group" id="bg-drawHeads">
+              <button class="btn-opt active" data-val="1">1 — Single</button>
+              <button class="btn-opt" data-val="2">2 — Mirror</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="section">
+          <div class="section-label">Motion</div>
+
+          <div class="slider-row" id="sr-speed">
+            <div class="slider-header">
+              <span class="slider-label">Speed</span>
+              <span class="mod-live" id="mod-live-speed"></span>
+              <span class="slider-value" id="v-speed">0.50</span>
+            </div>
+            <input type="range" class="filled" id="s-speed" min="0" max="1" step="0.001" value="0.5">
+          </div>
+
+          <div class="dir-row">
+            <div style="flex:1">
+              <div class="slider-header" style="margin-bottom:5px">
+                <span class="slider-label">Direction</span>
+                <span class="mod-live" id="mod-live-direction"></span>
+                <span class="slider-value" id="v-direction">0.60</span>
+              </div>
+              <input type="range" class="filled" id="s-direction" min="0" max="1" step="0.001" value="0.6" style="width:100%">
+            </div>
+            <div class="dir-canvas-wrap">
+              <canvas id="dir-canvas" width="40" height="40"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="section">
+          <div class="section-label">Decay</div>
+          <div class="slider-row" id="sr-decayRate">
+            <div class="slider-header">
+              <span class="slider-label">Decay Rate</span>
+              <span class="mod-live" id="mod-live-decayRate"></span>
+              <span class="slider-value" id="v-decayRate">4.00</span>
+            </div>
+            <input type="range" class="filled" id="s-decayRate" min="2" max="20" step="0.01" value="4">
+          </div>
+          <div class="slider-row" id="sr-fadeRate">
+            <div class="slider-header">
+              <span class="slider-label">Trail Fade</span>
+              <span class="mod-live" id="mod-live-fadeRate"></span>
+              <span class="slider-value" id="v-fadeRate">0.000</span>
+            </div>
+            <input type="range" class="filled" id="s-fadeRate" min="0" max="0.4" step="0.001" value="0">
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <div class="section"><div class="section-label">Actions</div></div>
+        <div id="action-row">
+          <button class="action-btn" id="btn-reset-spawn">Reset Params</button>
+          <button class="action-btn danger" id="btn-clear2">Clear Canvas</button>
+        </div>
+
+        <div class="section" style="margin-top:14px"><div class="section-label">Presets</div></div>
+        <div id="presets">
+          <button class="preset-chip" data-preset="diffuse">Diffuse</button>
+          <button class="preset-chip" data-preset="flow">Flow</button>
+          <button class="preset-chip" data-preset="chaos">Chaos</button>
+          <button class="preset-chip" data-preset="bloom">Bloom</button>
+          <button class="preset-chip" data-preset="trails">Trails</button>
+          <button class="preset-chip" data-preset="storm">Storm</button>
+        </div>
+      </div>
+
+      <!-- NOISE -->
+      <div class="tab-page" id="tab-noise">
+        <div class="section">
+          <div class="section-label">Noise Type</div>
+        </div>
+        <div class="noise-grid" id="noise-grid">
+          <div class="noise-card active" data-val="1">
+            <div class="nc-name">Perlin</div>
+            <div class="nc-desc">Position-driven gradient noise. Smooth, coherent motion.</div>
+          </div>
+          <div class="noise-card" data-val="2">
+            <div class="nc-name">Random</div>
+            <div class="nc-desc">Pure uniform random. Jittery, explosive scatter.</div>
+          </div>
+          <div class="noise-card" data-val="3">
+            <div class="nc-name">Gaussian</div>
+            <div class="nc-desc">Normal distribution. Soft symmetric diffusion.</div>
+          </div>
+          <div class="noise-card" data-val="4">
+            <div class="nc-name">fBm</div>
+            <div class="nc-desc">Fractal Brownian Motion. Multi-scale texture.</div>
+          </div>
+          <div class="noise-card" data-val="5">
+            <div class="nc-name">Brownian</div>
+            <div class="nc-desc">Random walk. Drifts persistently in one direction.</div>
+          </div>
+          <div class="noise-card" data-val="6">
+            <div class="nc-name">Logistic</div>
+            <div class="nc-desc">Chaotic map. Deterministic yet unpredictable.</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-label">Strength</div>
+          <div class="slider-row" id="sr-noiseAccMult">
+            <div class="slider-header">
+              <span class="slider-label">Noise Strength</span>
+              <span class="mod-live" id="mod-live-noiseAccMult"></span>
+              <span class="slider-value" id="v-noiseAccMult">1.00</span>
+            </div>
+            <input type="range" class="filled" id="s-noiseAccMult" min="0.01" max="3" step="0.01" value="1">
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <div class="section">
+          <div class="section-label">Recursion</div>
+          <div class="info-block" style="padding:0">
+            <p>When a particle fades to 25% of its initial alpha, it spawns 2 smaller children with half the decay rate. This continues until children are too faint to recurse (threshold scales with draw head count).</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- COLOR -->
+      <div class="tab-page" id="tab-color">
+        <div class="section">
+          <div class="section-label">Color (HSB)</div>
+        </div>
+        <div id="color-strip"></div>
+        <div class="section">
+          <div class="slider-row" id="sr-hue">
+            <div class="slider-header">
+              <span class="slider-label">Hue</span>
+              <span class="mod-live" id="mod-live-hue"></span>
+              <span class="slider-value" id="v-hue">1.00</span>
+            </div>
+            <input type="range" class="filled" id="s-hue" min="0" max="1" step="0.001" value="1">
+          </div>
+          <div class="slider-row" id="sr-saturation">
+            <div class="slider-header">
+              <span class="slider-label">Saturation</span>
+              <span class="mod-live" id="mod-live-saturation"></span>
+              <span class="slider-value" id="v-saturation">1.00</span>
+            </div>
+            <input type="range" class="filled" id="s-saturation" min="0" max="1" step="0.001" value="1">
+          </div>
+          <div class="slider-row" id="sr-alphaMult">
+            <div class="slider-header">
+              <span class="slider-label">Alpha Multiplier</span>
+              <span class="mod-live" id="mod-live-alphaMult"></span>
+              <span class="slider-value" id="v-alphaMult">1.00</span>
+            </div>
+            <input type="range" class="filled" id="s-alphaMult" min="0" max="1" step="0.001" value="1">
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="section">
+          <div class="section-label">Shape</div>
+          <div class="slider-row" id="sr-amp">
+            <div class="slider-header">
+              <span class="slider-label">Particle Size</span>
+              <span class="mod-live" id="mod-live-amp"></span>
+              <span class="slider-value" id="v-amp">3.00</span>
+            </div>
+            <input type="range" class="filled" id="s-amp" min="1" max="20" step="0.1" value="3">
+          </div>
+        </div>
+      </div>
+
+      <!-- MOD -->
+      <div class="tab-page" id="tab-mod">
+        <div class="mod-toolbar">
+          <span class="section-label">Oscillators</span>
+          <button class="add-osc-btn" id="btn-add-osc">+ LFO</button>
+        </div>
+        <div id="osc-list"></div>
+        <div id="osc-empty" class="osc-empty">
+          <div class="osc-empty-icon">∿</div>
+          <p>No oscillators yet.<br>Click + LFO to create one.</p>
+        </div>
+      </div>
+
+      <!-- INFO -->
+      <div class="tab-page" id="tab-info">
+        <div class="section"><div class="section-label">About</div></div>
+        <div class="info-block">
+          <p>Particle Draw spawns small squares at a moving position. Each particle drifts under noise-driven acceleration, fades out by its decay rate, and can recursively spawn smaller children before dying.</p>
+        </div>
+        <div class="section" style="margin-top:8px"><div class="section-label">Shortcuts</div></div>
+        <div class="shortcut-row"><span class="key">Space</span><span class="desc">Pause / Resume</span></div>
+        <div class="shortcut-row"><span class="key">C</span><span class="desc">Clear canvas</span></div>
+        <div class="shortcut-row"><span class="key">R</span><span class="desc">Randomize hue</span></div>
+        <div class="shortcut-row"><span class="key">↑ ↓</span><span class="desc">Noise strength</span></div>
+        <div class="shortcut-row"><span class="key">← →</span><span class="desc">Decay rate</span></div>
+        <div class="shortcut-row"><span class="key">1–6</span><span class="desc">Select noise type</span></div>
+        <div class="section" style="margin-top:16px"><div class="section-label">Modulation</div></div>
+        <div class="info-block">
+          <p>LFOs sweep any parameter between a <b style="color:var(--accent2)">Lo</b> and <b style="color:var(--accent2)">Hi</b> value. Multiple oscillators average their contributions. Modulated sliders turn <b style="color:var(--cyan)">cyan</b>.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Canvas ────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let showSpawn = true;
+
+function resize() {
+  const w = document.getElementById('canvas-wrap');
+  canvas.width  = w.clientWidth;
+  canvas.height = w.clientHeight;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+resize();
+window.addEventListener('resize', () => { resize(); });
+
+// ── Noise utilities ───────────────────────────────────────────
+const NOISE_LUT = new Float32Array(512);
+(function() { for (let i = 0; i < 512; i++) NOISE_LUT[i] = Math.random(); })();
+
+function valueNoise1D(x) {
+  const ix = Math.floor(x) & 511;
+  const fx = x - Math.floor(x);
+  const u  = fx * fx * (3 - 2 * fx);
+  return NOISE_LUT[ix] + (NOISE_LUT[(ix + 1) & 511] - NOISE_LUT[ix]) * u;
+}
+
+function fbm(x, octaves, lacunarity, gain) {
+  let amp = 1, freq = 1, sum = 0;
+  for (let i = 0; i < octaves; i++) {
+    sum += amp * valueNoise1D(x * freq);
+    freq *= lacunarity;
+    amp  *= gain;
+  }
+  return sum;
+}
+
+function gaussianRandom() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// ── Particle class ────────────────────────────────────────────
+class Particle {
+  constructor(x, y, rate, alpha, hue) {
+    this.x  = x; this.y = y;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.alpha  = alpha;
+    this.palpha = alpha;
+    this.rate   = rate;
+    this.hue    = hue;
+    this.brownianState = 0;
+    this.logisticX     = 0.5;
+  }
+
+  update(particles, noiseAccMult, noiseType, recursionThresh) {
+    let dax = 0, day = 0;
+    switch (noiseType) {
+      case 1: {
+        const sign = Math.random() > 0.5 ? 1 : -1;
+        dax = noiseAccMult * (valueNoise1D(this.x * 0.01) * 2 - 1);
+        day = noiseAccMult * (valueNoise1D(this.y * 0.01) * 2 - 1) * sign;
+        break;
+      }
+      case 2: {
+        dax = noiseAccMult * (Math.random() * 2 - 1);
+        day = noiseAccMult * (Math.random() * 2 - 1);
+        break;
+      }
+      case 3: {
+        const g = gaussianRandom();
+        dax = noiseAccMult * g;
+        day = noiseAccMult * -g;
+        break;
+      }
+      case 4: {
+        const nf   = fbm(noiseAccMult, 4, noiseAccMult * 10, 0.5) - Math.min(1, Math.max(0, noiseAccMult));
+        const sign4 = Math.random() > 0.5 ? 1 : -1;
+        dax = noiseAccMult * nf;
+        day = noiseAccMult * nf * sign4;
+        break;
+      }
+      case 5: {
+        const step = noiseAccMult * 0.3;
+        dax = noiseAccMult * this._brownian(step);
+        day = noiseAccMult * this._brownian(step);
+        break;
+      }
+      case 6: {
+        const lv = this._logistic();
+        dax = noiseAccMult * lv;
+        day = noiseAccMult * lv;
+        break;
+      }
+    }
+    this.vx += dax; this.vy += day;
+    this.x  += this.vx; this.y += this.vy;
+    this.alpha -= this.rate;
+
+    if (this.alpha <= this.palpha * 0.25 && this.palpha > recursionThresh) {
+      particles.push(new Particle(this.x, this.y, this.rate * 0.25, this.palpha * 0.5, this.hue));
+    }
+  }
+
+  _brownian(stepSize) {
+    this.brownianState += (Math.random() * 2 - 1) * stepSize;
+    this.brownianState  = Math.max(-1, Math.min(1, this.brownianState));
+    return this.brownianState;
+  }
+
+  _logistic() {
+    this.logisticX = 3.9 * this.logisticX * Math.pow(1 - this.logisticX, 2);
+    return this.logisticX * 2 - 1;
+  }
+
+  show(ctx, amp, sat, alphaMult) {
+    const a = Math.sqrt(this.alpha / 100) * alphaMult;
+    if (a <= 0) return;
+    const hueVal = this.hue * 360;
+    ctx.fillStyle = `hsla(${hueVal},${sat}%,50%,${Math.min(1, a).toFixed(3)})`;
+    ctx.fillRect(this.x, this.y, amp, amp);
+  }
+}
+
+// ── Base params ───────────────────────────────────────────────
+const P = {
+  decayRate: 4.0, fadeRate: 0.0, hue: 1.0, saturation: 1.0,
+  alphaMult: 1.0, amp: 3.0, drawX: 0.0, drawY: 0.0,
+  speed: 0.5, direction: 0.6, noiseAccMult: 1.0,
+  noiseType: 1, drawHeads: 1,
+};
+
+const Peff = Object.assign({}, P);
+
+const PARAM_META = {
+  decayRate:    { label: 'Decay Rate',      min: 2,    max: 20,   dec: 2 },
+  fadeRate:     { label: 'Trail Fade',      min: 0,    max: 0.4,  dec: 3 },
+  hue:          { label: 'Hue',             min: 0,    max: 1,    dec: 3 },
+  saturation:   { label: 'Saturation',      min: 0,    max: 1,    dec: 3 },
+  alphaMult:    { label: 'Alpha Mult',      min: 0,    max: 1,    dec: 3 },
+  amp:          { label: 'Particle Size',   min: 1,    max: 20,   dec: 2 },
+  drawX:        { label: 'Draw X',          min: 0,    max: 1,    dec: 3 },
+  drawY:        { label: 'Draw Y',          min: 0,    max: 1,    dec: 3 },
+  speed:        { label: 'Speed',           min: 0,    max: 1,    dec: 3 },
+  direction:    { label: 'Direction',       min: 0,    max: 1,    dec: 3 },
+  noiseAccMult: { label: 'Noise Strength',  min: 0.01, max: 3,    dec: 3 },
+};
+
+// ── Oscillator engine (identical to radial_draw) ──────────────
+let oscIdCounter = 0, mapIdCounter = 0;
+const oscillators = [];
+
+function oscRaw(shape, phi) {
+  switch (shape) {
+    case 'sine':   return (Math.sin(phi * 2 * Math.PI) + 1) / 2;
+    case 'tri':    return phi < 0.5 ? phi * 2 : 2 - phi * 2;
+    case 'square': return phi < 0.5 ? 1 : 0;
+    case 'saw':    return phi;
+    case 'rsaw':   return 1 - phi;
+    default:       return 0.5;
+  }
+}
+
+function oscValue(osc, t) {
+  const phi = ((t * osc.rate + osc.phaseOff) % 1 + 1) % 1;
+  return oscRaw(osc.shape, phi);
+}
+
+function computeModulation(t) {
+  Object.assign(Peff, P);
+  const modActive = new Set();
+  const acc = {};
+  for (const osc of oscillators) {
+    const raw     = oscValue(osc, t);
+    const bipolar = (raw - 0.5) * 2 * osc.amp;
+    for (const m of osc.mappings) {
+      if (!PARAM_META[m.param]) continue;
+      const center    = (m.lo + m.hi) / 2;
+      const halfRange = (m.hi - m.lo) / 2;
+      if (!acc[m.param]) acc[m.param] = { sum: 0, n: 0 };
+      acc[m.param].sum += center + bipolar * halfRange;
+      acc[m.param].n++;
+      modActive.add(m.param);
+    }
+  }
+  for (const [param, { sum, n }] of Object.entries(acc)) {
+    const meta = PARAM_META[param];
+    Peff[param] = Math.max(meta.min, Math.min(meta.max, sum / n));
+  }
+  return modActive;
+}
+
+// ── Particle state ────────────────────────────────────────────
+const MAX_PARTICLES = 15000;
+const particles = [];
+let xAccum = 0, yAccum = 0;
+let posX = 0, posY = 0, posX2 = 0, posY2 = 0;
+
+function updateSpawnPosition() {
+  const W = canvas.width, H = canvas.height;
+  const dir   = Peff.direction * Math.PI * 2;
+  const speed = Peff.speed * 10;
+
+  xAccum = ((xAccum + Math.cos(dir) * speed) % W + W) % W;
+  yAccum = ((yAccum + Math.sin(dir) * speed) % H + H) % H;
+
+  const baseX = Peff.drawX * W;
+  const baseY = (1 - Peff.drawY) * H;
+
+  posX = ((baseX + xAccum) % W + W) % W;
+  posY = ((baseY + yAccum) % H + H) % H;
+  posX2 = W - posX;
+  posY2 = H - posY;
+}
+
+// ── Frame loop ────────────────────────────────────────────────
+let isPaused = false, lastTime = 0, fpsSmooth = 0;
+let lastModActive = new Set();
+
+function frame(ts) {
+  requestAnimationFrame(frame);
+
+  const dt = ts - lastTime; lastTime = ts;
+  if (dt > 0) fpsSmooth = fpsSmooth * 0.9 + (1000/dt) * 0.1;
+
+  const t = ts / 1000;
+  lastModActive = computeModulation(t);
+
+  const W = canvas.width, H = canvas.height;
+
+  // Trail fade
+  if (Peff.fadeRate > 0) {
+    ctx.fillStyle = `rgba(0,0,0,${Peff.fadeRate})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  if (!isPaused) {
+    updateSpawnPosition();
+
+    const recThresh = Peff.drawHeads === 2 ? 30 : 20;
+    particles.push(new Particle(posX, posY, Peff.decayRate, 75, Peff.hue));
+    if (Peff.drawHeads === 2)
+      particles.push(new Particle(posX2, posY2, Peff.decayRate, 75, Peff.hue));
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    const sat      = Peff.saturation * 100;
+    const nAM      = Peff.noiseAccMult;
+    const nT       = Peff.noiseType;
+    const ampV     = Peff.amp;
+    const aM       = Peff.alphaMult;
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.update(particles, nAM, nT, recThresh);
+      p.show(ctx, ampV, sat, aM);
+      if (p.alpha <= 2) { particles.splice(i, 1); }
+    }
+    ctx.restore();
+
+    if (particles.length > MAX_PARTICLES)
+      particles.splice(0, particles.length - MAX_PARTICLES);
+  }
+
+  // Spawn point indicator
+  if (showSpawn) {
+    const pulse = (Math.sin(ts * 0.004) + 1) * 0.5;
+    const r     = 4 + pulse * 3;
+    ctx.beginPath(); ctx.arc(posX, posY, r, 0, Math.PI*2);
+    ctx.strokeStyle = `rgba(250,204,21,${0.5 + pulse*0.5})`; ctx.lineWidth = 1.5; ctx.stroke();
+    if (Peff.drawHeads === 2) {
+      ctx.beginPath(); ctx.arc(posX2, posY2, r, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(34,211,238,${0.5+pulse*0.5})`; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  }
+
+  // HUD + auxiliary canvas updates every 4 frames
+  const fi = Math.round(ts/16);
+  if (fi % 4 === 0) {
+    document.getElementById('particle-count').textContent = particles.length.toLocaleString() + ' particles';
+    document.getElementById('fps-label').textContent = Math.round(fpsSmooth) + ' fps';
+    updateModIndicators(lastModActive);
+    updateDirCanvas();
+    updatePosCanvas();
+    for (const osc of oscillators) if (osc.waveCanvas) drawOscWave(osc, osc.waveCanvas, t);
+  }
+}
+requestAnimationFrame(frame);
+
+// ── Direction compass ─────────────────────────────────────────
+function updateDirCanvas() {
+  const cv  = document.getElementById('dir-canvas');
+  const dctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height, cx = W/2, cy = H/2;
+  dctx.clearRect(0,0,W,H);
+  dctx.fillStyle='#16161f'; dctx.beginPath(); dctx.arc(cx,cy,cx-1,0,Math.PI*2); dctx.fill();
+  dctx.strokeStyle='#1e1e2e'; dctx.lineWidth=1;
+  dctx.beginPath(); dctx.arc(cx,cy,cx-1,0,Math.PI*2); dctx.stroke();
+  const dir = Peff.direction * Math.PI * 2;
+  const r   = cx - 5;
+  dctx.strokeStyle='#7c6af7'; dctx.lineWidth=1.5;
+  dctx.beginPath(); dctx.moveTo(cx,cy);
+  dctx.lineTo(cx + r*Math.cos(dir), cy + r*Math.sin(dir)); dctx.stroke();
+  dctx.fillStyle='#a78bfa';
+  dctx.beginPath(); dctx.arc(cx+r*Math.cos(dir), cy+r*Math.sin(dir), 3, 0, Math.PI*2); dctx.fill();
+}
+
+// ── Position mini-map ─────────────────────────────────────────
+function updatePosCanvas() {
+  const cv   = document.getElementById('pos-canvas');
+  const pctx  = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  pctx.clearRect(0, 0, W, H);
+  pctx.fillStyle='#16161f'; pctx.fillRect(0,0,W,H);
+  pctx.strokeStyle='#1e1e2e'; pctx.lineWidth=1;
+  pctx.strokeRect(0.5,0.5,W-1,H-1);
+
+  const cW = canvas.width || 1, cH = canvas.height || 1;
+  const mx = (posX / cW) * W;
+  const my = (posY / cH) * H;
+
+  pctx.strokeStyle='rgba(250,204,21,0.7)'; pctx.lineWidth=1;
+  pctx.beginPath(); pctx.moveTo(mx,0); pctx.lineTo(mx,H); pctx.stroke();
+  pctx.beginPath(); pctx.moveTo(0,my); pctx.lineTo(W,my); pctx.stroke();
+  pctx.fillStyle='#facc15';
+  pctx.beginPath(); pctx.arc(mx, my, 3, 0, Math.PI*2); pctx.fill();
+
+  if (P.drawHeads === 2) {
+    const mx2 = (posX2/cW)*W, my2 = (posY2/cH)*H;
+    pctx.strokeStyle='rgba(34,211,238,0.5)'; pctx.lineWidth=1;
+    pctx.beginPath(); pctx.moveTo(mx2,0); pctx.lineTo(mx2,H); pctx.stroke();
+    pctx.beginPath(); pctx.moveTo(0,my2); pctx.lineTo(W,my2); pctx.stroke();
+    pctx.fillStyle='#22d3ee';
+    pctx.beginPath(); pctx.arc(mx2,my2,3,0,Math.PI*2); pctx.fill();
+  }
+}
+
+// Click on pos-canvas to set drawX/drawY
+document.getElementById('pos-canvas').addEventListener('click', e => {
+  const cv = e.currentTarget;
+  const rect = cv.getBoundingClientRect();
+  const nx = (e.clientX - rect.left) / rect.width;
+  const ny = (e.clientY - rect.top)  / rect.height;
+  P.drawX = Math.max(0, Math.min(1, nx));
+  P.drawY = Math.max(0, Math.min(1, 1 - ny)); // flip Y
+  const sx = document.getElementById('s-drawX');
+  const sy = document.getElementById('s-drawY');
+  sx.value = P.drawX; updateTrackFill(sx); document.getElementById('v-drawX').textContent = P.drawX.toFixed(2);
+  sy.value = P.drawY; updateTrackFill(sy); document.getElementById('v-drawY').textContent = P.drawY.toFixed(2);
+  xAccum = 0; yAccum = 0;
+});
+
+// ── Mod indicators ────────────────────────────────────────────
+function updateModIndicators(modActive) {
+  for (const [param, meta] of Object.entries(PARAM_META)) {
+    const row  = document.getElementById('sr-' + param);
+    const live = document.getElementById('mod-live-' + param);
+    const isOn = modActive.has(param);
+    if (row)  row.classList.toggle('is-modulated', isOn);
+    if (live) live.textContent = isOn ? ('→ ' + Peff[param].toFixed(meta.dec)) : '';
+  }
+}
+
+// ── UI helpers ────────────────────────────────────────────────
+function updateTrackFill(el) {
+  const mn=parseFloat(el.min),mx=parseFloat(el.max),v=parseFloat(el.value);
+  el.style.setProperty('--pct', ((v-mn)/(mx-mn)*100)+'%');
+}
+
+function bindSlider(id, key, fmt) {
+  const el=document.getElementById('s-'+id), vl=document.getElementById('v-'+id);
+  if(!el||!vl) return;
+  el.addEventListener('input',()=>{const v=parseFloat(el.value);P[key]=v;vl.textContent=fmt?fmt(v):v.toFixed(2);updateTrackFill(el);});
+  updateTrackFill(el);
+}
+
+function bindBtnGroup(id, key, onChange) {
+  const grp=document.getElementById('bg-'+id); if(!grp) return;
+  grp.querySelectorAll('.btn-opt').forEach(btn=>btn.addEventListener('click',()=>{
+    grp.querySelectorAll('.btn-opt').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const v=btn.dataset.val; P[key]=isNaN(+v)?v:+v;
+    if(onChange) onChange(P[key]);
+  }));
+}
+
+function syncBtnGroup(id, val) {
+  const grp=document.getElementById(id); if(!grp) return;
+  grp.querySelectorAll('.btn-opt').forEach(b=>b.classList.toggle('active',+b.dataset.val===val||b.dataset.val===String(val)));
+}
+
+bindSlider('decayRate',   'decayRate');
+bindSlider('fadeRate',    'fadeRate',    v=>v.toFixed(3));
+bindSlider('hue',         'hue');
+bindSlider('saturation',  'saturation');
+bindSlider('alphaMult',   'alphaMult');
+bindSlider('amp',         'amp');
+bindSlider('drawX',       'drawX',       v=>{xAccum=0;return v.toFixed(2);});
+bindSlider('drawY',       'drawY',       v=>{yAccum=0;return v.toFixed(2);});
+bindSlider('speed',       'speed');
+bindSlider('direction',   'direction');
+bindSlider('noiseAccMult','noiseAccMult');
+
+// drawX/drawY need to reset accumulator on change — patch them
+['s-drawX','s-drawY'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',()=>{xAccum=0;yAccum=0;});
+});
+
+bindBtnGroup('drawHeads','drawHeads');
+
+// Noise type cards
+document.querySelectorAll('.noise-card').forEach(card=>{
+  card.addEventListener('click',()=>{
+    document.querySelectorAll('.noise-card').forEach(c=>c.classList.remove('active'));
+    card.classList.add('active');
+    P.noiseType = parseInt(card.dataset.val);
+  });
+});
+
+// Color strip
+function updateColorStrip() {
+  const hue=P.hue*360, sat=P.saturation*100;
+  document.getElementById('color-strip').style.background=`linear-gradient(to right,hsl(${hue},${sat}%,30%),hsl(${(hue+40)%360},${sat}%,50%),hsl(${(hue+80)%360},${sat}%,30%))`;
+}
+['s-hue','s-saturation'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('input',updateColorStrip);});
+updateColorStrip();
+
+// Tabs
+document.querySelectorAll('.tab').forEach(tab=>tab.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-page').forEach(p=>p.classList.remove('active'));
+  tab.classList.add('active');
+  document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
+}));
+
+// Canvas buttons
+const btnPause=document.getElementById('btn-pause');
+const runDot=document.getElementById('run-dot'),runLabel=document.getElementById('run-label');
+btnPause.addEventListener('click',()=>{
+  isPaused=!isPaused;
+  btnPause.textContent=isPaused?'Resume':'Pause';btnPause.classList.toggle('active',isPaused);
+  runDot.classList.toggle('paused',isPaused);runLabel.textContent=isPaused?'PAUSED':'RUNNING';
+});
+
+document.getElementById('btn-spawn').addEventListener('click',function(){
+  showSpawn=!showSpawn;this.classList.toggle('active',showSpawn);
+});
+
+function clearCanvas() {
+  particles.length=0; xAccum=0; yAccum=0;
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+document.getElementById('btn-clear').addEventListener('click',clearCanvas);
+document.getElementById('btn-clear2').addEventListener('click',clearCanvas);
+
+document.getElementById('btn-export').addEventListener('click',()=>{
+  const l=document.createElement('a');l.download='particle_draw.png';l.href=canvas.toDataURL('image/png');l.click();
+});
+
+document.getElementById('btn-reset-spawn').addEventListener('click',()=>{
+  const d={decayRate:4,fadeRate:0,speed:0.5,direction:0.6,drawX:0,drawY:0};
+  Object.assign(P,d);
+  Object.entries(d).forEach(([k,v])=>{
+    const el=document.getElementById('s-'+k);if(!el)return;
+    el.value=v;updateTrackFill(el);
+    const vl=document.getElementById('v-'+k);if(vl)vl.textContent=v.toFixed(k==='fadeRate'?3:2);
+  });
+  xAccum=0;yAccum=0;
+});
+
+// Presets
+const PRESETS = {
+  diffuse: {decayRate:5,  fadeRate:0,    hue:0.55,saturation:0.8,alphaMult:0.9,amp:3,  speed:0.1,direction:0.5,noiseAccMult:1.0,noiseType:1,drawHeads:1},
+  flow:    {decayRate:3,  fadeRate:0.05, hue:0.65,saturation:1,  alphaMult:1,  amp:2,  speed:0.4,direction:0.6,noiseAccMult:0.5,noiseType:1,drawHeads:1},
+  chaos:   {decayRate:8,  fadeRate:0.02, hue:0.0, saturation:1,  alphaMult:0.8,amp:2,  speed:0.3,direction:0.25,noiseAccMult:2.0,noiseType:6,drawHeads:2},
+  bloom:   {decayRate:2,  fadeRate:0,    hue:0.1, saturation:0.9,alphaMult:1,  amp:4,  speed:0.05,direction:0.5,noiseAccMult:0.3,noiseType:3,drawHeads:1},
+  trails:  {decayRate:10, fadeRate:0.08, hue:0.75,saturation:1,  alphaMult:1,  amp:2,  speed:0.6,direction:0.35,noiseAccMult:1.5,noiseType:5,drawHeads:1},
+  storm:   {decayRate:15, fadeRate:0.12, hue:0.6, saturation:0.5,alphaMult:0.7,amp:1.5,speed:0.8,direction:0.7, noiseAccMult:3.0,noiseType:2,drawHeads:2},
+};
+
+document.querySelectorAll('.preset-chip').forEach(chip=>chip.addEventListener('click',()=>{
+  const p=PRESETS[chip.dataset.preset];if(!p)return;
+  Object.assign(P,p);
+  ['decayRate','fadeRate','hue','saturation','alphaMult','amp','drawX','drawY','speed','direction','noiseAccMult'].forEach(k=>{
+    const el=document.getElementById('s-'+k);if(!el||!(k in p))return;
+    el.value=P[k];updateTrackFill(el);
+    const vl=document.getElementById('v-'+k);
+    if(vl)vl.textContent=P[k].toFixed(k==='fadeRate'?3:2);
+  });
+  // Noise type
+  if (p.noiseType) {
+    document.querySelectorAll('.noise-card').forEach(c=>{c.classList.toggle('active',+c.dataset.val===p.noiseType);});
+  }
+  syncBtnGroup('bg-drawHeads', P.drawHeads);
+  xAccum=0;yAccum=0;clearCanvas();updateColorStrip();
+}));
+
+// Keyboard
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
+  switch(e.key){
+    case ' ': btnPause.click(); break;
+    case 'c':case 'C': clearCanvas(); break;
+    case 'r':case 'R':{const el=document.getElementById('s-hue');el.value=Math.random();el.dispatchEvent(new Event('input'));break;}
+    case 'ArrowUp':  {const el=document.getElementById('s-noiseAccMult');el.value=Math.min(3,+el.value+0.1);el.dispatchEvent(new Event('input'));break;}
+    case 'ArrowDown':{const el=document.getElementById('s-noiseAccMult');el.value=Math.max(0.01,+el.value-0.1);el.dispatchEvent(new Event('input'));break;}
+    case 'ArrowRight':{const el=document.getElementById('s-decayRate');el.value=Math.min(20,+el.value+1);el.dispatchEvent(new Event('input'));break;}
+    case 'ArrowLeft': {const el=document.getElementById('s-decayRate');el.value=Math.max(2,+el.value-1);el.dispatchEvent(new Event('input'));break;}
+    case '1':case '2':case '3':case '4':case '5':case '6':{
+      const n=parseInt(e.key);P.noiseType=n;
+      document.querySelectorAll('.noise-card').forEach(c=>c.classList.toggle('active',+c.dataset.val===n));
+      break;
+    }
+  }
+});
+
+// ── Oscillator waveform preview ───────────────────────────────
+function drawOscWave(osc, cvs, t) {
+  const oc = cvs.getContext('2d');
+  const W = cvs.width, H = cvs.height;
+  oc.clearRect(0,0,W,H);
+  oc.fillStyle='#0d0d14';oc.fillRect(0,0,W,H);
+  oc.strokeStyle='#1e1e2e';oc.lineWidth=1;
+  oc.beginPath();oc.moveTo(0,H*0.5);oc.lineTo(W,H*0.5);oc.stroke();
+  const nc=2;
+  oc.strokeStyle='#7c6af7';oc.lineWidth=1.5;
+  oc.beginPath();
+  for(let px=0;px<=W;px++){
+    const phi=((px/W)*nc)%1;
+    const val=oscRaw(osc.shape,phi);
+    const y=(1-val)*(H*0.78)+H*0.11;
+    px===0?oc.moveTo(px,y):oc.lineTo(px,y);
+  }
+  oc.stroke();
+  const cp=((t*osc.rate+osc.phaseOff)%1+1)%1;
+  const px2=(cp/nc)*W;
+  oc.strokeStyle='rgba(250,204,21,0.65)';oc.lineWidth=1;
+  oc.setLineDash([2,3]);oc.beginPath();oc.moveTo(px2,0);oc.lineTo(px2,H);oc.stroke();oc.setLineDash([]);
+  const cv2=oscValue(osc,t);
+  const dy=(1-cv2)*(H*0.78)+H*0.11;
+  oc.fillStyle='#facc15';oc.beginPath();oc.arc(px2,dy,2.5,0,Math.PI*2);oc.fill();
+}
+
+// ── Oscillator UI ─────────────────────────────────────────────
+document.getElementById('btn-add-osc').addEventListener('click',()=>{addOscillator();renderOscList();});
+
+function addOscillator(){
+  const id=++oscIdCounter;
+  oscillators.push({id,name:`LFO ${id}`,shape:'sine',rate:0.5,amp:1.0,phaseOff:0.0,mappings:[],waveCanvas:null});
+}
+function removeOscillator(id){const i=oscillators.findIndex(o=>o.id===id);if(i!==-1)oscillators.splice(i,1);renderOscList();}
+function addMapping(osc,param){const m=PARAM_META[param];osc.mappings.push({id:++mapIdCounter,param,lo:m.min,hi:m.max});}
+function removeMapping(osc,mid){const i=osc.mappings.findIndex(m=>m.id===mid);if(i!==-1)osc.mappings.splice(i,1);}
+
+function renderOscList(){
+  const list=document.getElementById('osc-list'),empty=document.getElementById('osc-empty');
+  list.innerHTML='';
+  empty.style.display=oscillators.length===0?'block':'none';
+  for(const osc of oscillators)list.appendChild(buildOscCard(osc));
+}
+
+function buildOscCard(osc){
+  const card=document.createElement('div');
+  card.className='osc-card';
+  card.innerHTML=`
+    <div class="osc-header">
+      <span class="osc-live-dot"></span>
+      <span class="osc-name">${osc.name}</span>
+      <button class="osc-delete">×</button>
+    </div>
+    <canvas class="osc-wave-canvas" width="288" height="32"></canvas>
+    <div class="osc-body">
+      <div class="osc-shapes">
+        <button class="osc-shape-btn${osc.shape==='sine'?' active':''}"   data-shape="sine">SIN</button>
+        <button class="osc-shape-btn${osc.shape==='tri'?' active':''}"    data-shape="tri">TRI</button>
+        <button class="osc-shape-btn${osc.shape==='square'?' active':''}" data-shape="square">SQR</button>
+        <button class="osc-shape-btn${osc.shape==='saw'?' active':''}"    data-shape="saw">SAW</button>
+        <button class="osc-shape-btn${osc.shape==='rsaw'?' active':''}"   data-shape="rsaw">RSW</button>
+      </div>
+      <div class="osc-param-row">
+        <span class="osc-param-label">Rate</span>
+        <input type="range" class="osc-param-slider filled" min="0.01" max="10" step="0.01" value="${osc.rate}">
+        <span class="osc-param-val">${osc.rate.toFixed(2)} Hz</span>
+      </div>
+      <div class="osc-param-row">
+        <span class="osc-param-label">Amp</span>
+        <input type="range" class="osc-param-slider filled" min="0" max="1" step="0.001" value="${osc.amp}">
+        <span class="osc-param-val">${osc.amp.toFixed(2)}</span>
+      </div>
+      <div class="osc-param-row">
+        <span class="osc-param-label">Phase</span>
+        <input type="range" class="osc-param-slider filled" min="0" max="1" step="0.001" value="${osc.phaseOff}">
+        <span class="osc-param-val">${osc.phaseOff.toFixed(2)}</span>
+      </div>
+      <div class="osc-mappings-header">
+        <span class="osc-mappings-label">Mappings</span>
+        <button class="add-map-btn">+ map</button>
+      </div>
+      <div class="mapping-list"></div>
+      <div class="add-map-select-wrap" style="display:none"></div>
+    </div>`;
+
+  osc.waveCanvas=card.querySelector('.osc-wave-canvas');
+  card.querySelector('.osc-delete').addEventListener('click',()=>removeOscillator(osc.id));
+  card.querySelectorAll('.osc-shape-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    card.querySelectorAll('.osc-shape-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');osc.shape=btn.dataset.shape;
+  }));
+  const sls=card.querySelectorAll('.osc-param-slider'),vls=card.querySelectorAll('.osc-param-val');
+  sls[0].addEventListener('input',()=>{osc.rate=+sls[0].value;vls[0].textContent=osc.rate.toFixed(2)+' Hz';updateTrackFill(sls[0]);});updateTrackFill(sls[0]);
+  sls[1].addEventListener('input',()=>{osc.amp=+sls[1].value;vls[1].textContent=osc.amp.toFixed(2);updateTrackFill(sls[1]);});updateTrackFill(sls[1]);
+  sls[2].addEventListener('input',()=>{osc.phaseOff=+sls[2].value;vls[2].textContent=osc.phaseOff.toFixed(2);updateTrackFill(sls[2]);});updateTrackFill(sls[2]);
+  card.querySelector('.add-map-btn').addEventListener('click',()=>showAddMapDropdown(card,osc));
+  refreshMappingList(card,osc);
+  return card;
+}
+
+function showAddMapDropdown(card,osc){
+  const wrap=card.querySelector('.add-map-select-wrap');
+  if(wrap.style.display!=='none'){wrap.style.display='none';wrap.innerHTML='';return;}
+  const ex=new Set(osc.mappings.map(m=>m.param));
+  const av=Object.keys(PARAM_META).filter(k=>!ex.has(k));
+  if(!av.length)return;
+  const sel=document.createElement('select');sel.className='add-map-select';
+  sel.innerHTML='<option value="">— select parameter —</option>'+av.map(k=>`<option value="${k}">${PARAM_META[k].label}</option>`).join('');
+  wrap.innerHTML='';wrap.appendChild(sel);wrap.style.display='block';sel.focus();
+  sel.addEventListener('change',()=>{if(!sel.value)return;addMapping(osc,sel.value);wrap.style.display='none';wrap.innerHTML='';refreshMappingList(card,osc);});
+  setTimeout(()=>{
+    const close=e=>{if(!wrap.contains(e.target)){wrap.style.display='none';wrap.innerHTML='';document.removeEventListener('mousedown',close);}};
+    document.addEventListener('mousedown',close);
+  },0);
+}
+
+function refreshMappingList(card,osc){
+  const list=card.querySelector('.mapping-list');list.innerHTML='';
+  for(const m of osc.mappings)list.appendChild(buildMappingRow(card,osc,m));
+}
+
+// ── Manual overlay ────────────────────────────────────────────
+{
+  const btnManual = document.getElementById('btn-manual');
+  const manualOverlay = document.getElementById('manual-overlay');
+  const statusPill = document.getElementById('status-pill');
+  btnManual.addEventListener('click', () => {
+    const showing = manualOverlay.classList.toggle('visible');
+    btnManual.textContent = showing ? 'Canvas' : 'Manual';
+    btnManual.classList.toggle('active', showing);
+    statusPill.style.visibility = showing ? 'hidden' : '';
+  });
+}
+
+// ── Video recording ───────────────────────────────────────────
+let mediaRecorder = null, recordedChunks = [];
+const btnRecord = document.getElementById('btn-record');
+
+btnRecord.addEventListener('click', () => {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+  } else {
+    recordedChunks = [];
+    const mimeType = ['video/webm;codecs=vp9','video/webm'].find(t => MediaRecorder.isTypeSupported(t)) || '';
+    mediaRecorder = new MediaRecorder(canvas.captureStream(60), mimeType ? { mimeType } : {});
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = 'particle_draw.webm'; a.click();
+      URL.revokeObjectURL(url);
+      btnRecord.textContent = 'Record';
+      btnRecord.classList.remove('recording');
+    };
+    mediaRecorder.start();
+    btnRecord.textContent = 'Stop';
+    btnRecord.classList.add('recording');
+  }
+});
+
+function buildMappingRow(card,osc,m){
+  const meta=PARAM_META[m.param],step=(meta.max-meta.min)/1000;
+  const row=document.createElement('div');row.className='mapping-row';
+  row.innerHTML=`
+    <div class="mapping-top">
+      <span class="mapping-param-name">${meta.label}</span>
+      <button class="map-del-btn">×</button>
+    </div>
+    <div class="range-grid">
+      <div class="range-col">
+        <div class="range-col-label">Lo <span class="rv lo-val">${m.lo.toFixed(meta.dec)}</span></div>
+        <input type="range" class="filled lo-slider" min="${meta.min}" max="${meta.max}" step="${step}" value="${m.lo}">
+      </div>
+      <div class="range-col">
+        <div class="range-col-label">Hi <span class="rv hi-val">${m.hi.toFixed(meta.dec)}</span></div>
+        <input type="range" class="filled hi-slider" min="${meta.min}" max="${meta.max}" step="${step}" value="${m.hi}">
+      </div>
+    </div>`;
+  row.querySelector('.map-del-btn').addEventListener('click',()=>{removeMapping(osc,m.id);refreshMappingList(card,osc);});
+  const loS=row.querySelector('.lo-slider'),hiS=row.querySelector('.hi-slider');
+  const loV=row.querySelector('.lo-val'),hiV=row.querySelector('.hi-val');
+  loS.addEventListener('input',()=>{m.lo=+loS.value;if(m.lo>m.hi){m.hi=m.lo;hiS.value=m.lo;hiV.textContent=m.lo.toFixed(meta.dec);updateTrackFill(hiS);}loV.textContent=m.lo.toFixed(meta.dec);updateTrackFill(loS);});updateTrackFill(loS);
+  hiS.addEventListener('input',()=>{m.hi=+hiS.value;if(m.hi<m.lo){m.lo=m.hi;loS.value=m.hi;loV.textContent=m.hi.toFixed(meta.dec);updateTrackFill(loS);}hiV.textContent=m.hi.toFixed(meta.dec);updateTrackFill(hiS);});updateTrackFill(hiS);
+  return row;
+}
+</script>
+</body>
+</html>
